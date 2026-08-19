@@ -2,46 +2,38 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
-    { waitUntil() {}, passThroughOnException() {} },
-  );
-}
-
-test("يعرض واجهة مغامرة ريفان العربية", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
+test("ينشئ صفحة عربية ثابتة بمسارات GitHub Pages الصحيحة", async () => {
+  const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
   assert.match(html, /<html[^>]*lang="ar"[^>]*dir="rtl"/i);
-  assert.match(html, /مغامرة/);
-  assert.match(html, /ريفان/);
-  assert.match(html, /ابدأ/);
-  assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/i);
+  assert.match(html, /<title>مغامرة ريفان \| لعبة سيارات للأطفال<\/title>/);
+  assert.match(html, /\/rivan-adventure\/assets\//);
+  const manifestHref = html.match(/<link rel="manifest" href="([^"]+)"/)?.[1];
+  assert.equal(
+    new URL(manifestHref, "https://ahf88711.github.io/rivan-adventure/").pathname,
+    "/rivan-adventure/manifest.webmanifest",
+  );
+  assert.doesNotMatch(html, /rivan-adventure\/rivan-adventure/);
+  assert.match(html, /https:\/\/ahf88711\.github\.io\/rivan-adventure\/og\.png/);
+  assert.doesNotMatch(html, /chatgpt\.site|openai\.com|signin-with-chatgpt/i);
 });
 
-test("يحتوي على إعدادات تطبيق الويب التقدمي", async () => {
-  const manifest = JSON.parse(await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
+test("يحتوي البناء على ملفات اللعبة وPWA", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../dist/manifest.webmanifest", import.meta.url), "utf8"));
   assert.equal(manifest.name, "مغامرة ريفان");
   assert.equal(manifest.display, "standalone");
-  assert.equal(manifest.lang, "ar");
-  assert.equal(manifest.icons.length, 2);
+  assert.equal(manifest.start_url, "./");
+  assert.equal(manifest.scope, "./");
 
   await Promise.all([
-    access(new URL("../public/sw.js", import.meta.url)),
-    access(new URL("../public/icon-192.png", import.meta.url)),
-    access(new URL("../public/icon-512.png", import.meta.url)),
-    access(new URL("../public/og.png", import.meta.url)),
+    access(new URL("../dist/.nojekyll", import.meta.url)),
+    access(new URL("../dist/sw.js", import.meta.url)),
+    access(new URL("../dist/icon-192.png", import.meta.url)),
+    access(new URL("../dist/icon-512.png", import.meta.url)),
+    access(new URL("../dist/og.png", import.meta.url)),
   ]);
 });
 
-test("لا تتبقى ملفات المعاينة المؤقتة", async () => {
-  await assert.rejects(access(new URL("../app/_sites-preview", import.meta.url)));
+test("لا يعتمد بناء GitHub Pages على خادم أو استضافة OpenAI", async () => {
+  await assert.rejects(access(new URL("../.openai/hosting.json", import.meta.url)));
+  await assert.rejects(access(new URL("../dist/server/index.js", import.meta.url)));
 });
